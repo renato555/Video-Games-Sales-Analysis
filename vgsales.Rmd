@@ -1,0 +1,1055 @@
+---
+title: "vgsales"
+author: "Mato Gudelj, Ivan Gadža, Lovro Glogar, Renato Jurišić"
+subtitle: Case study analiza prodaje videoigara
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE)
+```
+
+# Video games sales data
+```{r}
+# ucitavanje podataka
+vgsales = read.csv("vgsales.csv")
+vgsales$Year = as.integer(vgsales$Year)
+```
+
+Grupiramo igre po imenu, izdavaču i žanru jer su to iste igre i ne želimo ih razlikovati.
+Inicijalno se razlikuju po platformi.
+
+```{r}
+# sales sumiramo
+vgsales.grouped = aggregate( vgsales[c(7, 8, 9, 10, 11)],
+                             vgsales[c("Name", "Publisher", "Genre")],
+                             FUN = sum)
+
+# za godinu uzimamo srednju vrijednost
+vgsales.grouped = merge( vgsales.grouped,
+                         aggregate( vgsales["Year"], 
+                         vgsales[c("Name", "Publisher", "Genre")],
+                         FUN = mean),
+                         by = c( "Name", "Publisher", "Genre"))
+```
+
+```{r}
+summary( vgsales.grouped)
+```
+# Pitanje 1: Jesu li u Japanu RPG igre značajno prodavanije od FPS igara? 
+
+Grupirajmo igre prema žanru, izračunavamo ukupnu prodaju te ih silazno sortiramo.
+RPG igre ostvarile su najviše, a FPS igre najmanje prodaja, što ide u korist istraživačkoj hipotezi.
+
+```{r}
+total_sales_genre = aggregate( vgsales.grouped["JP_Sales"], vgsales.grouped["Genre"], sum)
+total_sales_genre_in_order = order( total_sales_genre["JP_Sales"], decreasing=TRUE)
+
+barplot( total_sales_genre$JP_Sales[ total_sales_genre_in_order], 
+         main="total sales by genre",
+         ylab="copies sold [million]",
+         names.arg = total_sales_genre$Genre[ total_sales_genre_in_order],
+         las=2)
+```
+
+Srednja vrijednost prodaja također je veća kod RPG igara.
+
+```{r}
+jp_rpg_sales = vgsales.grouped[ vgsales.grouped["Genre"]=="Role-Playing" 
+                                & vgsales.grouped["JP_Sales"] != 0,]$JP_Sales
+jp_fps_sales = vgsales.grouped[ vgsales.grouped["Genre"]=="Shooter" 
+                                & vgsales.grouped["JP_Sales"] != 0,]$JP_Sales
+
+boxplot( jp_rpg_sales, jp_fps_sales, 
+         main="RPG vs FPS mean",
+         ylab="copies sold [million]",
+         names=c("RPG", "FPS"),
+         outline=FALSE)
+```
+
+
+Motivirani prethodnim grafom formuliramo sljedeću statističku hipotezu.
+
+$$\textbf{H0: mean( RPG sales) = mean( FPS sales)}$$
+$$\textbf{H1: mean( RPG sales) > mean( RPG sales)}$$
+
+Ako želimo provesti T-test moramo provjeriti normalnost podataka. Ovi podaci nisu normalni, više djeluju da dolaze iz eksponencijalne distribucije.
+
+```{r}
+jp_rpg = vgsales.grouped[ vgsales.grouped["Genre"]=="Role-Playing", ]$JP_Sales
+jp_fps = vgsales.grouped[ vgsales.grouped["Genre"]=="Shooter",]$JP_Sales
+  
+hist( jp_rpg,
+      main="Japan RPG sales histogram",
+      xlab="copies sold (million)",
+      ylab="frequency")
+
+hist( jp_fps,
+      main="Japan FPS sales histogram",
+      xlab="copies sold (million)",
+      ylab="frequency")
+```
+
+Mogli bismo transformirati podatke da dobijemo normalnu distribuciju i nakon toga provesti T-test.
+Također, možemo provesti i bootstrap koji ne zahtjeva normalnost. Boostrap je nešto slabiji test, ali imamo veliki uzorak koji će to kompenzirati.
+
+```{r}
+rpg_mean = mean( jp_rpg)
+fps_mean = mean( jp_fps)
+
+n = length( jp_rpg)
+m = length( jp_fps)
+
+t = (rpg_mean - fps_mean)/sqrt( var( jp_rpg)/n + var( jp_fps)/m)
+
+z = mean( c(jp_rpg,jp_fps))
+
+x = jp_rpg - rpg_mean + z
+y = jp_fps - fps_mean + z
+
+t_boot = vector(mode="numeric", length=10)
+B = 1000
+
+for( b in 1:B){
+  x_temp = sample( x, size=n)
+  y_temp = sample( y, size=m)
+  
+  t_b = (mean( x_temp) - mean( y_temp))/sqrt( var(x_temp)/n + var( y_temp)/m)
+  t_boot[b] = t_b
+}
+
+p = sum( t_boot > t)/B
+print( p)
+```
+
+## Zaključak
+
+P-vrijednost ispada 0 što nam daje veliku sigurnost da možemo odbaciti H0 i prihvatiti alternativu.
+Dakle, zaključujemo da su, u Japanu, RPG igre popularnije od FPS igri.
+
+\newpage
+
+# Pitanje 2: Možete li pronaći neki žanr koji je značajno popularniji u Europi nego u Japanu?
+
+Usporedimo prvo prodaje po žanrovima posebno u Europi i Japanu, te razlike prodaja između Europe i Japana.
+
+```{r}
+# Žanrovi u europi
+europe.genre_sales = aggregate( vgsales.grouped[c("EU_Sales")], 
+                                vgsales.grouped["Genre"], mean)
+
+barplot( europe.genre_sales$EU_Sales[ total_sales_genre_in_order], 
+         main="total sales by genre",
+         ylab="million $",
+         names.arg = total_sales_genre$Genre[ total_sales_genre_in_order],
+         las=2)
+
+# Žanrovi u japanu
+japan.genre_sales = aggregate( vgsales.grouped[c("JP_Sales")], 
+                                vgsales.grouped["Genre"], mean)
+
+barplot( japan.genre_sales$JP_Sales[ total_sales_genre_in_order], 
+         main="total sales by genre",
+         ylab="million $",
+         names.arg = total_sales_genre$Genre[ total_sales_genre_in_order],
+         las=2)
+
+# razlika između popularnosti žanrova u europi i japanu
+difference.genre_sales = aggregate( vgsales.grouped["EU_Sales"] - vgsales.grouped["JP_Sales"], 
+                                vgsales.grouped["Genre"], mean)
+
+barplot( difference.genre_sales$EU_Sales[ total_sales_genre_in_order], 
+         main="total sales by genre",
+         ylab="million $",
+         names.arg = total_sales_genre$Genre[ total_sales_genre_in_order],
+         las=2)
+```
+
+Prema dobivenim grafovima dobivamo osjećaj o tome koji bi žanrovi mogli biti popularniji u Europi u odnosu na Japan.
+
+Provjerimo je li žanr 'Shooter' značajno pupularniji u Europi nego u Japanu.
+Mičemo outliere iz prodaje igara koje pripadaju žanru 'Shooter' u Europi i Japanu:
+
+```{r}
+shooter = vgsales[vgsales$Genre == "Shooter", ]
+
+outliers.shooter_eu_sales = boxplot(shooter$EU_Sales, plot = FALSE)$out
+shooter_eu_sales_wihtout_outliers = shooter[! shooter$EU_Sales %in%
+                                              outliers.shooter_eu_sales, ]$EU_Sales
+
+outliers.shooter_jp_sales = boxplot(shooter$JP_Sales, plot = FALSE)$out
+shooter_jp_sales_wihtout_outliers = shooter[! shooter$JP_Sales %in%
+                                              outliers.shooter_jp_sales, ]$JP_Sales
+
+#Prije početka testiranja, skaliramo shooter_eu_sales_without_outliers
+#zbog razlika tržišta Europe i Japana
+shooter_eu_sales_wihtout_outliers = shooter_eu_sales_wihtout_outliers *
+                                    sum(shooter$JP_Sales) / sum(shooter$EU_Sales)
+```
+
+
+Radimo bootstrap test sredina žanra 'Shooter'.
+$$\textbf{H0: Sredine su jednake;} \space \space \mu_{shooter\_eu} = \mu_{shooter\_jp}$$
+$$\textbf{H1 Sredina Europe je veća;}  \space \space \mu_{shooter\_eu} > \mu_{shooter\_jp}$$
+
+```{r}
+eu_shooter_mean = mean(shooter_eu_sales_wihtout_outliers)
+jp_shooter_mean = mean(shooter_jp_sales_wihtout_outliers)
+
+n = length( shooter_eu_sales_wihtout_outliers)
+m = length( shooter_jp_sales_wihtout_outliers)
+
+t = (eu_shooter_mean - jp_shooter_mean) / 
+    sqrt( var( shooter_eu_sales_wihtout_outliers)/n +
+          var( shooter_jp_sales_wihtout_outliers)/m)
+
+z = mean( c(shooter_eu_sales_wihtout_outliers,shooter_jp_sales_wihtout_outliers))
+
+x = shooter_eu_sales_wihtout_outliers - eu_shooter_mean + z
+y = shooter_jp_sales_wihtout_outliers - jp_shooter_mean + z
+
+t_boot = vector(mode="numeric", length=10)
+B = 1000
+
+for( b in 1:B){
+  x_temp = sample( x, size=n)
+  y_temp = sample( y, size=m)
+  
+  t_b = (mean( x_temp) - mean( y_temp))/sqrt( var(x_temp)/n + var( y_temp)/m)
+  t_boot[b] = t_b
+}
+p = sum( t_boot > t)/B
+print( p)
+```
+
+## Zaključak
+Prema rezultatu Bootstrap-a, odbacujemo hipotezu da su sredine iste i zaključujemo da je žanr 'Shooter' značajno popularniji u Europi nego u Japanu.
+
+\newpage
+
+# Pitanje 3: Jesu li izdavači jednako popularni u svim regijama?
+Zanima nas imaju li izdavači prednost na nekom tržištu. Npr. da li izdavači prodaju više kopija igri na domaćem tržištu.
+Postavljamo statističku hipotezu i provodimo test homogenosti.
+
+$$\textbf{H0: Za svakog izdavača, proporcije prodaja po regijama su jednake}$$
+$$\textbf{H1: Za svakog izdavača, proporcije prodaja po regijama nisu jednake}$$
+
+Kontingencijska tablica izgleda ovako:
+```{r}
+publisher_region = vgsales.grouped[ vgsales.grouped$Publisher == "Nintendo" |  
+                            vgsales.grouped$Publisher == "Microsoft Game Studios" |
+                            vgsales.grouped$Publisher == "Sony Computer Entertainment" |
+                            vgsales.grouped$Publisher == "Electronic Arts",]
+
+publisher_region = publisher_region[ c("Publisher", "NA_Sales", "EU_Sales",
+                                       "JP_Sales", "Other_Sales")]
+publisher_region = aggregate( publisher_region[c("NA_Sales", "EU_Sales",
+                                       "JP_Sales", "Other_Sales")], 
+                              list(publisher_region$Publisher), sum)
+table = as.table( as.matrix(publisher_region[-1]))
+rownames( table) = publisher_region$Group.1
+table = addmargins( table)
+print( table)
+```
+
+Prije nego što provedemo chi-kvadrat test moramo provjeriti jesu li zadovoljene pretpostavke testa.
+Očekivane frekvencije svih razreda moraju biti > 5. U ovom slučaju je to zadovoljeno.
+```{r}
+for (col in colnames( table)){
+  for (row in rownames( table)){
+    if (!(row == 'Sum' | col == 'Sum') ){
+      cat('Očekivane frekvencije za razred ',col,'-',row,': ',
+          (table[row,'Sum'] * table['Sum',col]) / table['Sum','Sum'],'\n')
+    }
+  }
+}
+```
+
+Provodimo test:
+```{r}
+chisq.test( table, correct=F)
+```
+## Zaključak
+
+Nisu svi izdavači jednako popularni u svakoj regiji.
+
+\newpage
+
+# Pitanje 4: Prodaje li se, u prosjeku, više primjeraka igrica u Sjedinjenim državama ili Japanu za proizvođača Nintendo?
+
+Zbog toga što jedna videoigra može biti veliki uspjeh u nekoj državi (npr. Super Mario) i ne reprezentira prodaju ostalih igara, potrebno je maknuti stršeće vrijednosti. Prvo ćemo maknuti one igrice koje odskaču u Sjedinjenim državama pa one koje odskaču u Japanu. Gledati ćemo iste igrice (koje nisu pretežno popularne) koje prodajemo u Sjedinjenim državama i Japanu.
+
+```{r}
+
+nintendo = vgsales[vgsales["Publisher"] == "Nintendo" & 
+                     vgsales["NA_Sales"] != 0.00 & 
+                     vgsales["JP_Sales"] != 0.00,]
+
+Q <- quantile(nintendo$NA_Sales, probs=c(.25, .75), na.rm = FALSE)
+iqr <- IQR(nintendo$NA_Sales)
+
+nintendo <- subset(nintendo, nintendo$NA_Sales > (Q[1] - 1.5*iqr) 
+                   & nintendo$NA_Sales < (Q[2]+1.5*iqr))
+
+Q <- quantile(nintendo$JP_Sales, probs=c(.25, .75), na.rm = FALSE)
+iqr <- IQR(nintendo$JP_Sales)
+
+nintendo <- subset(nintendo, nintendo$JP_Sales > (Q[1] - 1.5*iqr) 
+                   & nintendo$JP_Sales < (Q[2]+1.5*iqr))
+
+nintendo_us <- nintendo$NA_Sales
+nintendo_jp <- nintendo$JP_Sales
+
+boxplot( nintendo_us, nintendo_jp, 
+         main="Nintendo sales in US vs JP",
+         ylab="million of copies",
+         names=c("US", "JP"),
+         outline=FALSE)
+```
+
+Na grafu se može vidjeti da je medijan veći za Sjedinjene države negoli za Japan što je dobra naznaka za ono što želimo testirati. 
+
+Pogledajmo sada kakva je distribucija podataka.
+
+``` {r}
+
+hist(nintendo_us, freq=FALSE)
+
+```
+``` {r}
+
+hist(nintendo_jp, freq=FALSE)
+
+```
+
+Ovo nam je naznaka da podaci nisu normalno distribuirani. Pogledajmo još qq-plot.
+
+``` {r}
+
+qqnorm(nintendo_us, pch = 1, frame = FALSE)
+qqline(nintendo_us, col = "steelblue", lwd = 2)
+
+```
+``` {r}
+
+qqnorm(nintendo_jp, pch = 1, frame = FALSE)
+qqline(nintendo_jp, col = "steelblue", lwd = 2)
+```
+
+Iako se iz histograma i qq-plota može dobiti dobra slika o normalnosti podatka, ipak je bolje provesti statistički test kako bismo to i dokazali.
+
+``` {r}
+
+ks.test(nintendo_us, "pnorm", alternative ="less")
+
+
+ks.test(nintendo_jp, "pnorm", alternative ="less")
+
+
+```
+
+U oba slučaja odbacujemo nul-hipotezu (podaci su normalno distribuirani) u korist alternativne hipoteze (podaci nisu normalno distribuirani) zato što je p-vrijednost manja od 0.05. Zato ćemo pokušati transformirati podatke kako bismo dobili "normalnije" podatke.
+
+
+``` {r}
+
+nintendo_us <- log(nintendo_us)
+nintendo_jp <- log(nintendo_jp)
+
+```
+
+
+``` {r}
+
+hist(nintendo_us, freq=FALSE)
+
+```
+
+``` {r}
+
+hist(nintendo_jp, freq=FALSE)
+
+```
+
+``` {r}
+
+
+qqnorm(nintendo_us, pch = 1, frame = FALSE)
+qqline(nintendo_us, col = "steelblue", lwd = 2)
+
+```
+
+``` {r}
+
+qqnorm(nintendo_jp, pch = 1, frame = FALSE)
+qqline(nintendo_jp, col = "steelblue", lwd = 2)
+
+```
+
+Vidimo da su sada podaci bliži normalnoj distribuciji nego što su bili, pa će i t-test biti točniji. Također, opet provodimo test za normalnost podataka.
+
+``` {r}
+
+ks.test(nintendo_us, "pnorm", alternative ="less")
+
+
+ks.test(nintendo_jp, "pnorm", alternative ="less")
+
+
+```
+
+Sada kada znamo da su naši podaci približno normalno distribuirani, potrebno je i provjeriti jednakost varijanci statističkim testom (graf je dobar uvid, ali nije dovoljan).
+
+``` {r}
+
+var.test(nintendo_us, nintendo_jp, alternative = "two.sided")
+
+```
+
+Budući da je p-vrijednost veća od 0.05, prihvaćamo nul hipotezu i zaključujemo da nema značajne razlike u varijancama ovih dvaju uzoraka.
+
+``` {r}
+
+t.test(nintendo_us, nintendo_jp, paired = TRUE, alternative = "greater", var.equal = TRUE)
+
+```
+
+## Zaključak
+P vrijednost je manja od 0.05 i te odbacujemo H0 i zaključujemo da je u prosjeku prodano više igara proizvođača Nintendo u Sjedinjenim državama što je i očekivano budući da u Sjedinjenim državama živi daleko više ljudi.
+
+
+## Usporedba per capita
+Pogledajmo sada što se događa "per capita", odnosno po glavi stanovnika.
+Broj ljudi koji živi u Sjedinjenim državama jest 329,5 milijuna, dok u Japanu živi 125,8 milijuna ljudi.
+
+```{r}
+nintendo = vgsales[vgsales["Publisher"] == "Nintendo" 
+                   & vgsales["NA_Sales"] != 0.00 
+                   & vgsales["JP_Sales"] != 0.00,]
+
+Q <- quantile(nintendo$NA_Sales, probs=c(.25, .75), na.rm = FALSE)
+iqr <- IQR(nintendo$NA_Sales)
+
+nintendo <- subset(nintendo, nintendo$NA_Sales > (Q[1] - 1.5*iqr) 
+                   & nintendo$NA_Sales < (Q[2]+1.5*iqr))
+
+Q <- quantile(nintendo$JP_Sales, probs=c(.25, .75), na.rm = FALSE)
+iqr <- IQR(nintendo$JP_Sales)
+
+nintendo <- subset(nintendo, nintendo$JP_Sales > (Q[1] - 1.5*iqr) 
+                   & nintendo$JP_Sales < (Q[2]+1.5*iqr))
+
+nintendo_us = nintendo$NA_Sales / 329.5
+nintendo_jp = nintendo$JP_Sales / 128.8
+
+
+boxplot( nintendo_us, nintendo_jp, 
+         main="Nintendo sales in US vs JP",
+         ylab="million of copies",
+         names=c("US", "JP"),
+         outline=FALSE)
+```
+
+Vidimo da je situacija sada obrnuta. Pogledajmo distribuciju podataka.
+
+``` {r}
+
+hist(nintendo_us, freq=FALSE)
+hist(nintendo_jp, freq=FALSE)
+
+```
+
+Vidimo da podaci vjerojatno nisu normalno distribuirani, pa provodimo test.
+
+``` {r}
+
+ks.test(nintendo_us, "pnorm", alternative ="less")
+
+
+ks.test(nintendo_jp, "pnorm", alternative ="less")
+
+
+```
+
+Zaključujemo da podaci nisu normalno distribuirani pa ih pokušamo transformirati.
+
+``` {r}
+
+nintendo_us <- log(nintendo_us)
+nintendo_jp <- log(nintendo_jp)
+
+```
+
+Sada opet provodimo test kako bi se uvjerili u distribuciju podataka.
+
+``` {r}
+
+ks.test(nintendo_us, "pnorm", alternative ="less")
+
+
+ks.test(nintendo_jp, "pnorm", alternative ="less")
+
+
+```
+
+Zaključujemo da su podaci približno normalno distribuirani. Pogledajmo sada i grafički prikaz podataka.
+
+``` {r}
+
+hist(nintendo_us, freq=FALSE)
+hist(nintendo_jp, freq=FALSE)
+
+```
+
+Vidimo da su sada podaci bliži normalnoj te opet testiramo jednakost varijanci kako bi mogli što točnije provesti t-test.
+
+``` {r}
+
+var.test(nintendo_us, nintendo_jp, alternative = "two.sided")
+
+```
+
+Zaključujemo da nema značajne razlike u varijancama.
+
+``` {r}
+
+t.test(nintendo_us, nintendo_jp, paired = TRUE, alternative = "less", var.equal = TRUE)
+
+```
+
+## Zaključak - per capita
+Dakle, ukoliko uklonimo stršeće vrijednosti, odnosno ne gledamo igrice koje su postale izrazito popularne u Sjedinjenim državama i Japanu možemo zaključiti da se u prosjeku po glavi stanovnika više igrica prozvođača Nintendo proda u Japanu nego u Sjedinjenim državama.
+
+\newpage
+
+# Pitanje 5: Promatrajući prodaju u Sjevernoj Americi, jesu li neki žanrovi značano populariniji?
+
+Za odgovor na ovo pitanje moramo definirati 'mjeru popularnosti'. Uzimamo da je srednja vrijednost broja prodaja dobar analog popularnosti. Zbog toga se problem svodi na uspoređivanje srednjih vrijednosti broja prodaja po žanrovima.
+
+Jednakost srednjih vrijednosti možemo provjeriti ANOVA-om. Za primjenu ANOVA-e trebamo provjeriti normalnost podataka i homogenost varijance.
+
+```{r}
+# ucitavanje podataka
+vgsales_p3 = read.csv("vgsales.csv")
+vgsales_p3$Year = suppressWarnings(as.integer(vgsales_p3$Year))
+```
+
+```{r}
+# stvaramo korisne varijable, micemo retke s NA (not available) vrijednostima
+svi_zanrovi <- unique(vgsales_p3$Genre)
+vgsales_p3 <- na.omit(vgsales_p3)
+
+# grupiramo podatke kao i prije
+agr = aggregate(vgsales_p3[c(7, 8, 9, 10, 11)],
+                vgsales_p3[c("Name", "Publisher", "Genre")], FUN = sum)
+
+# za godinu uzimamo srednju vrijednost
+vgsales_p3 = merge(agr, aggregate(vgsales_p3["Year"],
+                                  vgsales_p3[c("Name", "Publisher", "Genre")],
+                                  FUN = mean),
+                                  by = c("Name", "Publisher", "Genre"))
+
+```
+
+Prvo želimo grafički prikazati ljestvicu prosječnih prodaja po žanru u NA. 
+Rezultat nam može dati moguće kandidate za daljnju analizu. 
+
+```{r}
+# ljestvica najpopularinijih žanrova u NA
+mean_po_zanrovima <- aggregate(vgsales_p3["NA_Sales"], vgsales_p3["Genre"], mean)
+poredani_meanovi <- mean_po_zanrovima[order(-mean_po_zanrovima$NA_Sales),]
+
+barplot(poredani_meanovi$NA_Sales,
+         main = "average sales by genre",
+         ylab = "million copies",
+         names.arg = poredani_meanovi$Genre,
+         las = 2)
+```
+
+Vidimo da su mogući kandidati Platform i Shooter.
+
+Zbog pretpostavke ANOVA-e trebamo provjeriti normalnost populacija i homogenost varijanci.
+Odnosno želimo provjeriti:
+
+$$
+\begin{aligned}
+\mathbb{X}_i \sim \mathcal{N}, \kern1em i\in\left[1, n\right] \\
+\sigma_1^2 = \sigma_2^2 = ... = \sigma_n^2
+\end{aligned}
+$$
+
+Gdje je 'X_i' populacija broja prodanih kopija žanra i, a 'n' ukupan broj žanrova.
+
+Za provjeru normalnosti vizualiziramo populacije QQ-plotom:
+
+```{r}
+for (zanr in svi_zanrovi) {
+  qqnorm(vgsales_p3[vgsales_p3$Genre == zanr,]$NA_Sales, main=zanr)
+}
+```
+
+Iz QQ-plota možemo vidjeti da populacije ne izgledaju normalno.
+
+Za svrhe daljnje vizualizacije mičemo retke s NA_Sales == 0. Razlog tomu je što je preciznost podatka 2 decimale, pa su _sve_ prodaje ispod 0.005 milijuna kopija obilježene s 0.
+Zbog toga je odnos x i y u podacima u intervalu [0, 0.005] gotovo sigurno kriv, i vrlo lako može dati krivu sliku.
+
+Ako transformacijom uspostavimo eksponencijalni odnos x i y i ponovimo QQ-plot dobivamo:
+
+```{r}
+# Za svrhe vizualizacije mičemo retke s NA_Sales == 0. 
+bez_nula <- vgsales_p3[vgsales_p3$NA_Sales != 0,]
+
+for (zanr in svi_zanrovi) {
+  qqnorm(log(bez_nula[bez_nula$Genre == zanr,]$NA_Sales), main=zanr)
+  qqline(log(bez_nula[bez_nula$Genre == zanr,]$NA_Sales), lwd = 2)
+}
+```
+
+Ovi QQ-plotovi izgledaju puno normalnije.
+
+Na lijevom repu imamo 'stepeničast' rast zbog (kao i prethodno spomenute) nedostatne preciznosti podatka NA_Sales. To donekle daje lažnu sliku, no veći dio problema smo riješili odbacivanjem vrijednosti s NA_Sales == 0 iz vizualizacije.
+
+
+Prije korištenja ANOVA-e trebamo još provjeriti homogenost varijance.
+Kako imamo više od 2 populacije, ne možemo koristiti f-test. Zato koristimo Bartlettov test.
+
+Testiramo hipotezu:
+
+$$
+\begin{aligned}
+  H_0&: \sigma_1^2 = \sigma_2^2 = ... = \sigma_n^2 \\
+  H_1&: \neg H_0
+\end{aligned}
+$$
+
+```{r}
+
+bartlett.test(log(NA_Sales) ~ Genre, bez_nula)
+
+for (zanr in svi_zanrovi) {
+  print(zanr)
+  subset <- bez_nula[bez_nula$Genre == zanr,]$NA_Sales
+  print(var(log(subset)))
+}
+
+```
+
+Odbacujemo H_0. Vidimo da _nemamo_ homogenost varijanci. Zbog toga ne možemo primijeniti klasičnu ANOVA-u.
+
+Ipak, kao što je i napravljeno na auditornim vježbama, nastavljamo s analizom iako nismo zadovoljili pretpostavku ANOVA-e. 
+
+U ovom slučaju bi inače koristili drugi pristup koji ne zahtijeva homogenost varijanci. Jedan takav pristup je prikazan za svrhe usporedbe pri kraju poglavlja - Welch-ova ANOVA. Usporedbom tog rezultata s analizom koja slijedi moći ćemo vidjeti da je kršenje pretpostavke napravilo malu razliku u donesenom zaključku.
+
+Želimo provesti ANOVA-u na punom skupu podataka, no problematične su nam vrijednosti y = 0 (zbog transformacije log(y)). Odbacivanje tih vrijednosti ne bi bilo dobro rješenje problema, jer nerazmjerno utječe na neke žanrove kao što je prikazano ovdje:
+
+```{r}
+samo_nule <- vgsales_p3[vgsales_p3$NA_Sales == 0, ]
+n_zanr <- setNames(aggregate(Genre ~ samo_nule$Genre, 
+                            data = samo_nule, FUN = length), c("Genre", "N"))
+n_zanr_sve <- setNames(aggregate(Genre ~ vgsales_p3$Genre, 
+                            data = vgsales_p3, FUN = length), c("Genre", "N"))
+
+n_zanr
+
+udio_nula <- data.frame(Zanr=character(), Udio=double(), stringsAsFactors=FALSE)
+
+for (zanr in svi_zanrovi) {
+  p <- n_zanr[n_zanr$Genre == zanr, ]$N/n_zanr_sve[n_zanr_sve$Genre == zanr, ]$N
+  udio_nula <- rbind(udio_nula, data.frame(Zanr=zanr, Udio=p))
+}
+
+udio_nula[order(-udio_nula$Udio),]
+
+```
+
+Vidimo da postoji velika razlika u udjelu igrica s 0 prodaja među žanrovima. Od čak 62.02% za 'Adventure' do ispod 10% (točnije 9.72%) za 'Racing'. 
+
+Zbog toga koristimo drugi pristup. Dodajemo malu epsilon vrijednost svim prodajama. Vrijednost je izabrana takva da bude upola manja od preciznosti podatka, odnosno 0.01/2 (0.005).
+
+ANOVA testira hipotezu:
+
+$$
+\begin{aligned}
+  H_0 & : \mu_1 = \mu_2 = ... = \mu_k \\
+  H_1&: \neg H_0
+\end{aligned}
+$$
+
+```{r}
+eps <- 0.005
+rezultat_aov <- aov(log(NA_Sales + eps) ~ Genre, data = vgsales_p3)
+summary(rezultat_aov)
+```
+
+Odbacujemo H_0. Vidimo da zaista postoji značajna razlika u popularnosti žanrova u NA, no ANOVA nam ne kaže točno _koji_ su žanrovi popularniji od drugih. 
+
+Za to trebamo provesti parne usporedbe srednjih vrijednosti žanrova (svih 11*10/2 = 55) i pronaći one žanrove koji imaju značajno _veću_ srednju vrijednost od ostalih žanrova.
+
+Za to možemo koristiti Tukey-ov test [Walpole, 13.6 - p.546]:
+
+```{r}
+tukey <- TukeyHSD(rezultat_aov)
+tukey
+```
+
+Ukoliko pogledamo parove žanrova koje smo prethodno izdvojili kao potencijalne kandidate, naime Platform i Shooter, dobivamo sljedeće:
+
+(koristimo :alpha: = 0.05)
+
+```{r}
+
+# Filtriramo samo parove s Platform ili Shooter
+p_foo <- function(x) grepl("Platform", x)
+platform_pairs <- Filter(p_foo, attr(tukey$Genre, "dimnames")[[1]])
+s_foo <- function(x) grepl("Shooter", x)
+shooter_pairs <- Filter(s_foo, attr(tukey$Genre, "dimnames")[[1]])
+
+p_lim <- 0.05
+
+platform_p_values <- c()
+for (pair in platform_pairs) {
+  platform_p_values <- c(platform_p_values, tukey$Genre[pair,][4])
+}
+
+shooter_p_values <- c()
+for (pair in shooter_pairs) {
+  shooter_p_values <- c(shooter_p_values, tukey$Genre[pair,][4])
+}
+
+print(paste("Za žanr 'Platform' ukupno", sum(platform_p_values > p_lim),
+            "para nisu postigli značajno različit rezultat."))
+print(paste("Za žanr 'Shooter' ukupno", sum(shooter_p_values > p_lim),
+            "para nisu postigli značajno različit rezultat."))
+
+```
+
+Koristeći Tukey-ov test vidimo da je žanr 'Platform' značajno popularniji od 9 drugih žanrova.
+Značajnost razlike srednjih prodaja nije postignuta jedino za parove 'Shooter-Platform' i 'Racing-Platform'.
+
+Dobivena p-vrijednost pri usporedbi Platform i Racing je 0.0773562 (ova brojka će biti relevantna u dodatku). 
+
+Za drugi kandidat ('Shooter') Tukey-ov test također kaže da je značajno populariniji od 9 drugih žanrova.
+Uz 'Shooter-Platform', značajnost se još ne postiže jedino za par 'Shooter-Racing'.
+
+\newpage
+
+## Dodatak: ANOVA u slučaju nehomogenosti varijance 
+
+U ovom dodatku ilustriramo pristup provođenju usporedbe srednjih vrijednosti ukoliko nije zadovoljena pretpostavka homogenosti varijance. Koristi se Welch-ova ANOVA.
+
+Opet testiramo:
+
+$$
+\begin{aligned}
+  H_0 & : \mu_1 = \mu_2 = ... = \mu_k \\
+  H_1&: \neg H_0
+\end{aligned}
+$$
+
+Welchovu ANOVA-u provodimo koristeći oneway.test() funkciju, uz parametar var.equal = FALSE:
+
+```{r}
+eps <- 0.005
+rezultat_aov <- oneway.test(log(NA_Sales + eps) ~ Genre,
+                            data = vgsales_p3, var.equal = FALSE)
+print(rezultat_aov)
+```
+
+Kao i kod obične ANOVA-e, vidimo da zaista postoji značajna razlika u popularnosti žanrova u NA, no opet ANOVA nam ne kaže točno _koji_ su žanrovi popularniji od drugih.
+
+Za to opet trebamo provesti post-hoc test koji radi parne usporedbe srednjih vrijednosti žanrova.
+
+Za post-hoc test ne možemo koristiti Tukeyov test, jer on (isto kao one-way ANOVA) pretpostavlja homogenost varijanci. No možemo koristiti Games-Howell test iz paketa _rstatix_:
+
+```{r}
+require(rstatix)
+
+# Transformiramo potpune podatke, samo dodajemo konstantu veličine 1/2 preciznosti
+# svim podacima, da izbjegnemo log(0)
+transformirani <- data.frame(vgsales_p3)
+transformirani$NA_Sales <- log(transformirani$NA_Sales + 0.005)
+
+games_howell <- games_howell_test(transformirani, NA_Sales ~ Genre)
+games_howell
+```
+
+Ukoliko pogledamo iste parove žanrova kao u pravoj analizi, naime 'Platform' i 'Shooter', dobivamo:
+
+```{r}
+p_lim <- 0.05
+
+plat_usporedbe <- games_howell[games_howell$group1 == "Platform" |
+                                 games_howell$group2 == "Platform",]
+shoot_usporedbe <- games_howell[games_howell$group1 == "Shooter" |
+                                 games_howell$group2 == "Shooter",]
+
+print(paste("Za žanr 'Platform' ukupno", sum(plat_usporedbe$p.adj > p_lim),
+            "par nije postigao značajno različit rezultat."))
+print(paste("Za žanr 'Shooter' ukupno", sum(shoot_usporedbe$p.adj > p_lim),
+            "para nisu postigli značajno različit rezultat."))
+```
+
+```{r}
+plat_usporedbe
+shoot_usporedbe
+```
+
+Dobivamo drugačiji zaključak od onoga u pravoj ("pogrešnoj") analizi - žanr 'Platform' je značajno popularniji od 10 drugih žanrova, dok je 'Shooter' značajno popularniji od 9.
+
+Možemo vidjeti gdje je razlika ukoliko se referiramo natrag na p-vrijednosti 'Platform-Racing'.
+
+Sada je p-vrijednost pri usporedbi Platform i Racing 0.040, dok je prije bila 0.0773562. Zbog toga je žanr 'Platform' "dobio" značajnost nad još jednim žanrom (koristimo :alpha: = 0.05)
+
+Ovaj primjer dobro ilustrira kako ne poštivanje pretpostavki testa može dovesti do krivog zaključka. 
+
+
+\newpage
+# Pitanje 6: Možemo li danim varijablama predviđati prodaju videoigara
+
+Kako bi odgovorili na pitanje, služimo se alatom linerne regresije.
+Specifično, pokušavamo napraviti model koji dobro objašnjava prodaju igara u Europi.
+
+```{r}
+vgsales.lr = vgsales.grouped
+```
+
+Prvo promotrimo kakvi su kandidati za regresore NA_Sales i JP_Sales
+Mozemo crtati točkaste dijagrame kako bi dobili grubu sliku njihovog mogućeg odnosa prema EU_Sales.
+
+```{r}
+plot(vgsales.lr$NA_Sales, vgsales.lr$EU_Sales, xlab = "NA_Sales", ylab = "EU_Sales",
+     ylim=c(0,10), xlim=c(0,10))
+```
+
+\newpage
+
+```{r}
+plot(vgsales.lr$JP_Sales, vgsales.lr$EU_Sales, xlab = "JP_Sales", ylab = "EU_Sales", 
+     ylim=c(0,10), xlim=c(0,10))
+```
+
+Vidimo da i NA_Sales i JP_Sales možda imaju pozitivan utjecaj na EU_Sales.
+Također, ovdje dolazi do izražaja razlika u popularnosti pojedinih žanrova izmedu Europe i Japana.
+
+\newpage
+
+Nacrtajmo opet plotove, ali ovoga puta grupirajmo po žanrovima.
+
+```{r}
+# shooter se skoro pa ne prodaje u Japanu, a dominira u EU
+eu.jp.shooter = vgsales.lr[ vgsales.lr["Genre"] == "Shooter",]
+
+plot(eu.jp.shooter$JP_Sales, eu.jp.shooter$EU_Sales, xlab = "JP_Sales_Shooter", 
+     ylab = "EU_Sales_Shooter", ylim=c(0,10), xlim=c(0,10))
+
+```
+
+\newpage
+
+```{r}
+
+# Role playing dominira u Japanu, a manje u EU
+eu.jp.rpg = vgsales.lr[ vgsales.lr["Genre"] == "Role-Playing",]
+plot(eu.jp.rpg$JP_Sales, eu.jp.rpg$EU_Sales, xlab = "JP_Sales_RPG", 
+     ylab = "EU_Sales_RPG", ylim=c(0,10), xlim=c(0,10))
+```
+
+\newpage
+
+```{r}
+# Unija ovih dvaju daju otprilike onaj prvi
+eu.jp.rpg.shooter = rbind( eu.jp.shooter, eu.jp.rpg)
+plot(eu.jp.rpg.shooter$JP_Sales, eu.jp.rpg.shooter$EU_Sales,
+     xlab = "JP_Sales_RPG_Shooter", 
+     ylab = "EU_Sales_RPG_Shooter", ylim=c(0,10), xlim=c(0,10))
+```
+Dakle, JP_Sales direktno nije dobar regresor za EU_Sales. Bolje bi bilo odvojiti po žanrovima pa gledati njihov linearni doprinos.
+
+Zbog navedenih razloga prepostavljamo da će NA_Sales biti bolji regresor za EU_Sales.
+ 
+```{r}
+fit.data.NA = vgsales.lr
+fit.data.JP = vgsales.lr
+
+#Model sa NA_Sales kao jedinim regresorom
+fit.NA_Sales = lm(EU_Sales~ NA_Sales, data = fit.data.NA)
+
+#Model sa JP_Sales kao jedinim regresorom
+fit.JP_Sales = lm(EU_Sales~JP_Sales, data = fit.data.JP)
+
+#Nacrtajmo regresijske pravce na prijašnjim tockastim dijagramima
+plot(fit.data.NA$NA_Sales, fit.data.NA$EU_Sales, ylim=c(0,10), xlim=c(0,10))
+lines(fit.data.NA$NA_Sales, fit.NA_Sales$fitted.values, col = "red")
+
+plot(fit.data.JP$JP_Sales, fit.data.JP$EU_Sales, ylim=c(0,10), xlim=c(0,10))
+lines(fit.data.JP$JP_Sales, fit.JP_Sales$fitted.values, col = "red")
+```
+
+Ovim nagibima pravaca možemo potvrditi prethodnu tvrdnju da i NA_Sales i JP_Sales imaju pozitivan utjecaj na EU_Sales.
+
+Definiramo pomoćnu funkciju koja će za model testirati njene reziduale.
+
+```{r include=FALSE}
+require(nortest)
+```
+
+```{r}
+test.residuals <- function(selected.model){
+  
+  #QQPlot standardiziranih reziduala
+  qqnorm(rstandard(selected.model))
+  qqline(rstandard(selected.model))
+  
+  print(ks.test(rstandard(selected.model), 'pnorm'))
+
+  print(lillie.test(rstandard(selected.model)))
+}
+
+```
+
+\newpage
+Testirajmo sada reziduale prijašnjih modela
+
+```{r}
+test.residuals(fit.NA_Sales)
+```
+\newpage
+```{r}
+test.residuals(fit.JP_Sales)
+```
+
+Ne može se reći da su rezidualni normalno distribuirani. Testirajmo sada same modele.
+
+```{r}
+summary(fit.NA_Sales)
+summary(fit.JP_Sales)
+```
+
+Vidimo da NA_Sales ima značajniji utjecaj na EU_Sales nego JP_Sales, ali i dalje nismo sigurni da je utjecaj JP_Sales zanemariv.
+
+Isprobajmo onda sada višestruki model kombinirajući NA_Sales i JP_Sales.
+
+```{r}
+fit.multi.na.jp.data = vgsales.lr
+```
+
+Ispitajmo prvo korelaciju izmedu NA_Sales i JP_Sales, jer ne želimo da oni budi "previše" korelirani.
+
+```{r}
+cor(fit.multi.na.jp.data$NA_Sales, fit.multi.na.jp.data$JP_Sales)
+```
+
+Dobivamo srednju korelaciju, što je u redu i možemo nastaviti sa izradom modela.
+
+```{r}
+#Model sa NA_Sales i JP_Sales kao regresorima
+fit.multi.na.jp = lm(EU_Sales ~ NA_Sales + JP_Sales, fit.multi.na.jp.data)
+#Testiramo reziduale
+test.residuals(fit.multi.na.jp)
+#Testiramo model
+summary(fit.multi.na.jp)
+```
+
+Dobivamo otprilike iste rezultate kao i kod jednostrukog modela sa NA_Sales pa možemo zaključiti da JP_Sales u ovakvome obliku nema veliki utjecaj na model.
+
+Testirajmo je li žanr možda značajan regresor. Stvaramo dummy varijable od Genre s tim da se radi o kategorijskoj varijabli i radimo model.
+
+```{r}
+fit.multi.na.jp.data = vgsales.lr
+
+#Izrada dummy varijabli
+require(fastDummies)
+vgsales2.d = dummy_cols(fit.multi.na.jp.data, select_columns = "Genre")
+
+#Promjenimo ime žanra Role Playing igri 
+names(vgsales2.d)[names(vgsales2.d) == "Genre_Role-Playing"] <- "Genre_Role_Playing"
+
+#Stvaramo model sa dummy varijablama
+fit.Genre.d = lm(EU_Sales~Genre_Action + Genre_Adventure + Genre_Fighting +
+                   Genre_Misc + Genre_Platform + Genre_Puzzle + Genre_Racing +
+                   Genre_Role_Playing + Genre_Shooter + Genre_Simulation +
+                   Genre_Sports, vgsales2.d)
+summary(fit.Genre.d)
+```
+
+Neke dummy varijable nemaju veliki utjecaj na model pa njih možemo izbaciti.
+
+Zbog tog razloga u model uključujemo samo Genre_Racing, Genre_Sports, Genre_Shooter, Genre_Platform i Genre_Action.
+
+Dodat ćemo i regresore tipa Genre_!*JP_Sales jer želimo rastaviti JP_Sales na komponente ovisno o žanru.
+
+```{r}
+fit.multi.d = lm(Global_Sales~NA_Sales + JP_Sales + Genre_Racing + Genre_Sports 
+                 + Genre_Shooter + Genre_Platform + Genre_Action 
+                 + I(JP_Sales*Genre_Shooter) + I(JP_Sales*Genre_Role_Playing), 
+                 data = vgsales2.d)
+#Testiramo reziduale dobivenog modela
+test.residuals(fit.multi.d)
+```
+
+Reziduali opet nisu normalno distribuirani.
+
+```{r}
+#Pogledajmo model
+summary(fit.multi.d)
+```
+
+Dodajmo godinu kao regresor.
+Gaming prije nije bio toliko popularan kao danas, pa očekujemo da modernije igre imaju veći sales.
+
+```{r}
+fit.data.Year = vgsales.lr[ vgsales.lr["EU_Sales"] < 10,]
+# bolje je kada regresor nije za nekoliko magnituda veci od varijable koju predviđamo
+fit.data.Year$Year = scale( fit.data.Year$Year, center = TRUE, scale = FALSE) 
+
+plot(fit.data.Year$Year, fit.data.Year$EU_Sales, xlab = "Year", ylab = "EU_Sales")
+# eksponencijalan rast?
+plot(fit.data.Year$Year, log( fit.data.Year$EU_Sales), xlab = "Year", ylab = "EU_Sales")
+```
+
+Zbog mogućeg eksponencijalnog rasta dodajmo jos transformirani regresor u novi model.
+
+```{r}
+#Dodajemo uz Year i log(Year) kao regresor
+fit.Year = lm(EU_Sales~Year + log(Year), data = fit.data.Year)
+
+summary( fit.Year)
+```
+
+Najvjerojatnije godina nema značajan utjecaj, ali možemo još provjeriti.
+
+```{r}
+#Prijašnji model sa dodanim regresorima Year i log(Year)
+fit.final.v1 = lm(Global_Sales~NA_Sales + JP_Sales + Genre_Racing + Genre_Sports 
+                  + Genre_Action + I(JP_Sales*Genre_Shooter) 
+                  + I(JP_Sales*Genre_Role_Playing) + Year + log(Year),
+                  data = vgsales2.d)
+#Testiramo reziduale
+test.residuals(fit.final.v1)
+```
+
+```{r}
+summary(fit.final.v1)
+```
+
+Rezultati nisu značajno bolji od prijašneg modela pa možemo odbaciti godinu kao regresora zbog jednostavnosti modela.
+
+```{r}
+fit.final.v2 = lm(Global_Sales~NA_Sales + JP_Sales + Genre_Racing + Genre_Sports
+                  + Genre_Action + I(JP_Sales*Genre_Shooter) 
+                  + I(JP_Sales*Genre_Role_Playing), data = vgsales2.d)
+test.residuals(fit.final.v2)
+summary(fit.final.v2)
+```
+
+Primjećujemo da, unatoč naizgled "kvalitetnim" modelima koje smo dobili, reziduali tih modela nikad nisu normalno distribuirani. Tijekom testiranja i izrade projekta nikakve transformacije podataka nisu značajno poboljšale taj rezultat. Zaključujemo da naši modeli ne objašnjavaju dobro sve trendove u skupu podataka.
+
+\newpage
+
+# Pitanje 7: Zamislite da radite videoigru. Kakve karakteristike bi ta igra trebala imati ako želite da ona bude što prodavanija u određenoj regiji.
+
+Općenito, kad bismo htjeli određivati karakteristike igre razmatrali bismo one regresore koji najbolje objašnjavaju regresiju.
+Međutim, naši podaci pretežno se sastoje od prodaje u određenoj regiji ( NA_Sales, EU_Sales...) koje nemamo na raspolaganju kada tek radimo videoigru. Trebaju nam podaci kao što su dob igrača, cijena proizvodnje igre, kupovna moć ljudi, single-player ili multi-player, informacije o uređajima na kojima će se igrica izvodit ( jači uređaj može podržat bolju grafiku i veći svijet) itd.
+Bez toga možemo reći samo u grubo. Ako radimo igru za tržište Japana, htjeli bismo da je ona RPG i da ju objavi Nintendo.
